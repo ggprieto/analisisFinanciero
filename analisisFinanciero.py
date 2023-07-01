@@ -3,6 +3,7 @@ import yfinance as yf
 import pandas as pd
 import plotly.graph_objs as go
 import numpy as np
+import datetime
 from pandas.tseries.offsets import BDay
 from datetime import timedelta
 
@@ -16,16 +17,16 @@ date_selection = st.selectbox("Selección de fecha:", ('Último día', 'Último 
 # Define la fecha de inicio y fin
 start_date, end_date = None, None
 if date_selection == 'Último día':
-    end_date = pd.datetime.today().date()
+    end_date = datetime.date.today()
     start_date = (end_date - BDay(1)).date()
 elif date_selection == 'Último mes':
-    end_date = pd.datetime.today().date()
+    end_date = datetime.date.today()
     start_date = (end_date - pd.DateOffset(months=1)).date()
 elif date_selection == 'Última semana':
-    end_date = pd.datetime.today().date()
+    end_date = datetime.date.today()
     start_date = (end_date - pd.DateOffset(weeks=1)).date()
 elif date_selection == 'Último año':
-    end_date = pd.datetime.today().date()
+    end_date = datetime.date.today()
     start_date = (end_date - pd.DateOffset(years=1)).date()
 else:
     start_date = st.date_input("Fecha de inicio:")
