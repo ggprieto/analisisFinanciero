@@ -1,129 +1,153 @@
-import streamlit as st
 import yfinance as yf
-import pandas as pd
-import plotly.graph_objs as go
-import numpy as np
-import datetime
-from pandas.tseries.offsets import BDay
-from datetime import timedelta
+import matplotlib.pyplot as plt
+from fuzzywuzzy import process
+import tkinter as tk
+from tkinter import ttk, simpledialog, messagebox, scrolledtext
 
-st.title("Análisis de Acciones en Tiempo Real")
-st.markdown("Introduzca el símbolo del ticker, el monto de inversión, elija el tipo de media móvil y el tamaño de la ventana, luego haga clic en 'Descargar y Analizar'")
+class Cartera:
+    def __init__(self):
+        self.acciones = {}
 
-ticker = st.text_input("Símbolo del Ticker:", "AAPL")
-investment = st.number_input("Monto de inversión ($):", value=1000)
-date_selection = st.selectbox("Selección de fecha:", ('Último día', 'Último mes', 'Última semana', 'Último año', 'Rango de fechas'))
+    def agregar_accion(self, ticker, fecha_compra, precio_compra, cantidad):
+        if ticker not in self.acciones:
+            self.acciones[ticker] = {
+                'fecha_compra': fecha_compra,
+                'precio_compra': precio_compra,
+                'cantidad': cantidad
+            }
+            print(f"{ticker} agregado a la cartera.")
+        else:
+            print(f"{ticker} ya está en la cartera. Considera eliminarlo primero si deseas agregarlo nuevamente.")
 
-# Define la fecha de inicio y fin
-start_date, end_date = None, None
-if date_selection == 'Último día':
-    end_date = datetime.date.today()
-    start_date = (end_date - BDay(1)).date()
-elif date_selection == 'Último mes':
-    end_date = datetime.date.today()
-    start_date = (end_date - pd.DateOffset(months=1)).date()
-elif date_selection == 'Última semana':
-    end_date = datetime.date.today()
-    start_date = (end_date - pd.DateOffset(weeks=1)).date()
-elif date_selection == 'Último año':
-    end_date = datetime.date.today()
-    start_date = (end_date - pd.DateOffset(years=1)).date()
-else:
-    start_date = st.date_input("Fecha de inicio:")
-    end_date = st.date_input("Fecha de fin:")
+    def eliminar_accion(self, ticker):
+        if ticker in self.acciones:
+            del self.acciones[ticker]
+            print(f"{ticker} eliminado de la cartera.")
+        else:
+            print(f"{ticker} no se encuentra en la cartera.")
 
-window_size = st.number_input("Tamaño de la ventana para SMA y EMA:", value=20)
-ma_type = st.selectbox("Tipo de Media Móvil:", options=['SMA', 'EMA'], index=0)
+    def rendimiento_cartera(self):
+        rendimiento_total = 0
+        for ticker, detalles in self.acciones.items():
+            try:
+                stock = yf.Ticker(ticker)
+                precio_actual = stock.history(period="1d")['Close'][0]
+                rendimiento = (precio_actual - detalles['precio_compra']) * detalles['cantidad']
+                rendimiento_total += rendimiento
+                print(f"Rendimiento de {ticker}: ${rendimiento:.2f}")
+            except:
+                print(f"No se pudo obtener el rendimiento de {ticker}.")
+        print(f"Rendimiento total de la cartera: ${rendimiento_total:.2f}")
 
-analyze_button = st.button('Descargar y Analizar')
-reset_button = st.button('Restablecer')
-
-if analyze_button:
-    ticker_info = yf.Ticker(ticker).info
-    ticker = ticker_info['symbol']
-
-    while True:
+    def historial_precio(self, ticker, periodo="1y"):
         try:
-            data = yf.download(ticker, start=start_date, end=end_date)
-            if len(data) == 0:
-                raise ValueError("No data available")
-            break
-        except ValueError:
-            end_date = (pd.to_datetime(end_date) - BDay(1)).date()
-            if date_selection == 'Último día':
-                start_date = (pd.to_datetime(start_date) - BDay(1)).date()
+            stock = yf.Ticker(ticker)
+            historical_data = stock.history(period=periodo)
+            print(historical_data)
+        except:
+            print(f"No se pudo obtener el historial de precios de {ticker}.")
 
-    data['SMA'] = data['Close'].rolling(window=int(window_size)).mean()
-    data['EMA'] = data['Close'].ewm(span=int(window_size), adjust=False).mean()
+    def detalles_accion(self, ticker):
+        if ticker in self.acciones:
+            detalles = self.acciones[ticker]
+            print(f"Detalles de {ticker}:")
+            for key, value in detalles.items():
+                print(f"{key}: {value}")
+        else:
+            print(f"{ticker} no se encuentra en la cartera.")
+            
+    def valor_actual_cartera(self):
+        valor_total = 0
+        for ticker, detalles in self.acciones.items():
+            try:
+                stock = yf.Ticker(ticker)
+                precio_actual = stock.history(period="1d")['Close'][0]
+                valor_total += precio_actual * detalles['cantidad']
+            except:
+                pass
+        return valor_total
 
+    def capital_invertido(self):
+        capital = sum([detalles['precio_compra'] * detalles['cantidad'] for detalles in self.acciones.values()])
+        return capital
 
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=data.index, y=data['Close'], mode='lines', name='Close'))
-    fig.add_trace(go.Scatter(x=data.index, y=data[ma_type], mode='lines', name=ma_type))
-    fig.update_layout(autosize=True, margin=dict(l=20, r=20, t=20, b=20), title=f"Gráfico de precios con {ma_type}")
+    def rendimiento_global(self):
+        return self.valor_actual_cartera() - self.capital_invertido()
 
-    fig_candle = go.Figure(data=[go.Candlestick(x=data.index,
-                                                open=data['Open'],
-                                                high=data['High'],
-                                                low=data['Low'],
-                                                close=data['Close'])])
-    fig_candle.update_layout(autosize=True, margin=dict(l=20, r=20, t=20, b=20), title="Gráfico de velas")
+def buscar_ticker_por_nombre(nombre):
+        tickers = yf.Tickers().tickers
+        matches = process.extract(nombre, tickers, limit=5)
+        return [match[0] for match in matches]
 
-    metrics = {
-    'Cambio del último día (%)': round(((data['Close'].iloc[-1] - data['Close'].iloc[-2]) / data['Close'].iloc[-2]) * 100, 2),
-    'Volatilidad': round(data['Close'].pct_change().rolling(window=20).std().dropna().iloc[-1] * 100, 2),
-    'Volumen promedio': round(data['Volume'].rolling(window=len(data)).mean()[(len(data['Volume'])-1)], 2),
-    'Retorno total (%)': round(((data['Close'].iloc[-1] - data['Close'].iloc[0]) / data['Close'].iloc[0]) * 100, 2),
-    'Rendimiento anualizado compuesto (%)': round((np.power((data['Close'].iloc[-1] / data['Close'].iloc[0]), (1 / ((data.index[-1] - data.index[0]).days / 365.25))) - 1) * 100, 2),
-    }   
+def interfaz_grafica():
+    window = tk.Tk()
+    window.title("Gestor de Cartera")
+    window.geometry("800x600")
 
-    price_summary = {
-    'Precio Máximo': round(data['Close'].max(), 2),
-    'Precio Mínimo': round(data['Close'].min(), 2),
-    'Precio Promedio': round(data['Close'].mean(), 2),
-    'Precio Mediano': round(data['Close'].median(), 2)
-    }
+    mi_cartera = Cartera()
+    
+    def actualizar_lista_acciones():
+        lista_acciones.delete(0, tk.END)
+        for ticker in mi_cartera.acciones:
+            lista_acciones.insert(tk.END, ticker)
 
-    data['MA'] = data['Close'].rolling(window=int(window_size)).mean()
-    metrics['Tendencia'] = 'Alcista' if data['Close'].iloc[-1] > data['MA'].iloc[-1] else 'Bajista'
+    def agregar_accion():
+        ticker = simpledialog.askstring("Agregar acción", "Introduce el ticker de la acción:")
+        fecha_compra = simpledialog.askstring("Agregar acción", "Introduce la fecha de compra (YYYY-MM-DD):")
+        precio_compra = simpledialog.askfloat("Agregar acción", "Introduce el precio de compra:")
+        cantidad = simpledialog.askinteger("Agregar acción", "Introduce la cantidad comprada:")
+        mi_cartera.agregar_accion(ticker, fecha_compra, precio_compra, cantidad)
+        actualizar_lista_acciones()
 
-    start_price = data['Open'].iloc[0]
-    end_price = data['Close'].iloc[-1]
-    shares_bought = investment / start_price
-    final_value = shares_bought * end_price
-    profit = final_value - investment
-    profit_percentage = (profit / investment) * 100
+    def eliminar_accion():
+        ticker = lista_acciones.get(lista_acciones.curselection())
+        mi_cartera.eliminar_accion(ticker)
+        actualizar_lista_acciones()
 
-    metrics['Profit Selected Range ($)'] = round(profit, 2)
-    metrics['Profit Percentage (%)'] = round(profit_percentage, 2)
+    def mostrar_rendimiento():
+        rendimiento = mi_cartera.rendimiento_global()
+        messagebox.showinfo("Rendimiento Global", f"El rendimiento global de la cartera es: ${rendimiento:.2f}")
 
-    # Calculate price estimation for the next 5 periods
-    next_periods = 5
-    next_dates = pd.bdate_range(start=data.index.max(), periods=next_periods + 1)[1:]
-    price_estimations = data[ma_type].values.tolist()[-window_size:]  # Use the last window_size values for the initial estimation
+    def mostrar_grafico_rendimiento():
+        tickers = list(mi_cartera.acciones.keys())
+        rendimientos = [yf.Ticker(ticker).history(period="1y")['Close'].pct_change().cumsum().iloc[-1] for ticker in tickers]
+        
+        plt.bar(tickers, rendimientos)
+        plt.ylabel('Rendimiento acumulado')
+        plt.title('Rendimiento por acción en la cartera')
+        plt.show()
 
-    for i in range(next_periods):
-        if ma_type == 'SMA':
-            price_estimation = np.mean(price_estimations[-window_size:])
-        else:  # EMA
-            alpha = 2 / (window_size + 1)
-            price_estimation = alpha * price_estimations[-1] + (1 - alpha) * price_estimations[-2]
+    # Widgets
+    frame_acciones = ttk.LabelFrame(window, text="Acciones", padding=(10, 5))
+    frame_acciones.grid(row=0, column=0, padx=10, pady=10, sticky="nsew")
 
-        price_estimations.append(price_estimation)
+    lista_acciones = tk.Listbox(frame_acciones)
+    lista_acciones.grid(row=0, column=0, rowspan=4, padx=5, pady=5, sticky="nsew")
 
-    price_estimation_table = pd.DataFrame({'Fecha': next_dates, 'Estimación de Precio': price_estimations[-next_periods:]})
+    btn_agregar = ttk.Button(frame_acciones, text="Agregar acción", command=agregar_accion)
+    btn_eliminar = ttk.Button(frame_acciones, text="Eliminar acción", command=eliminar_accion)
+    btn_grafico_rendimiento = ttk.Button(frame_acciones, text="Ver gráfico de rendimiento", command=mostrar_grafico_rendimiento)
 
-    st.plotly_chart(fig)
-    st.plotly_chart(fig_candle)
-    st.subheader("Resumen de los Últimos Precios")
-    st.dataframe(pd.DataFrame(list(price_summary.items()), columns=['Métrica', 'Valor']))
-    st.subheader("Resumen de los datos")
-    st.dataframe(pd.DataFrame(list(metrics.items()), columns=['Métrica', 'Valor']))
-    st.subheader("Estimación de Precio para los Próximos Períodos")
-    st.dataframe(price_estimation_table.style.format({'Estimación de Precio': '{:.2f}'}))
-    st.subheader("Profit y Porcentaje de Profit")
-    st.write("Profit: $", round(profit, 2))
-    st.write("Porcentaje de Profit: ", round(profit_percentage, 2), "%")
-elif reset_button:
-    st.empty()
+    btn_agregar.grid(row=0, column=1, padx=5, pady=5, sticky="ew")
+    btn_eliminar.grid(row=1, column=1, padx=5, pady=5, sticky="ew")
+    btn_grafico_rendimiento.grid(row=2, column=1, padx=5, pady=5, sticky="ew")
 
+    frame_resumen = ttk.LabelFrame(window, text="Resumen", padding=(10, 5))
+    frame_resumen.grid(row=0, column=1, padx=10, pady=10, sticky="nsew")
+
+    txt_resumen = scrolledtext.ScrolledText(frame_resumen, width=40, height=10)
+    txt_resumen.grid(row=0, column=0, padx=5, pady=5, sticky="nsew")
+
+    def actualizar_resumen():
+        txt_resumen.delete(1.0, tk.END)
+        txt_resumen.insert(tk.END, f"Capital invertido: ${mi_cartera.capital_invertido():.2f}\n")
+        txt_resumen.insert(tk.END, f"Valor actual: ${mi_cartera.valor_actual_cartera():.2f}\n")
+        txt_resumen.insert(tk.END, f"Rendimiento global: ${mi_cartera.rendimiento_global():.2f}\n")
+
+    btn_actualizar_resumen = ttk.Button(frame_resumen, text="Actualizar Resumen", command=actualizar_resumen)
+    btn_actualizar_resumen.grid(row=1, column=0, padx=5, pady=5, sticky="ew")
+
+    window.mainloop()
+
+if __name__ == "__main__":
+    interfaz_grafica()
